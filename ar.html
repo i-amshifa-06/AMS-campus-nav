@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>AMS Campus Smart AR</title>
+<title>AMS Campus AR</title>
 
 <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
@@ -20,7 +20,6 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   background:rgba(0,0,0,0.6);
   padding:12px;
   z-index:10;
-  backdrop-filter: blur(6px);
 }
 </style>
 </head>
@@ -29,7 +28,7 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 
 <div class="overlay">
   <h3 id="placeName"></h3>
-  <p id="distance">Calculating route...</p>
+  <p id="distance">Initializing...</p>
 </div>
 
 <a-scene
@@ -39,15 +38,10 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   arjs="sourceType:webcam; videoTexture:true; debugUIEnabled:false;"
 >
 
-<a-camera
-  id="camera"
-  rotation-reader
-  camera="fov:95; near:0.01; far:1000">
-</a-camera>
-
+<a-camera camera="fov:95; near:0.01; far:1000"></a-camera>
 <a-light type="ambient" intensity="2"></a-light>
 
-<a-entity id="path" position="0 -1 -6"></a-entity>
+<a-entity id="arrowContainer" position="0 -1 -6"></a-entity>
 
 </a-scene>
 
@@ -86,7 +80,7 @@ const edges = {
   mech:["cse"]
 };
 
-// ===== DESTINATION MATCH =====
+// ===== DESTINATION KEY =====
 function getKey(name){
   name=name.toLowerCase();
   if(name.includes("cse")||name.includes("it")) return "cse";
@@ -102,14 +96,11 @@ function getKey(name){
   return null;
 }
 
-const destinationKey=getKey(destination.name);
-
-if(!destinationKey){
-  document.getElementById("distance").innerText="Destination error.";
-}
+const destinationKey = getKey(destination.name);
 
 // ===== DISTANCE =====
-function toRad(d){return d*Math.PI/180;}
+function toRad(d){ return d*Math.PI/180; }
+
 function haversine(a,b){
   const R=6371e3;
   const φ1=toRad(nodes[a].lat);
@@ -150,7 +141,34 @@ function shortestPath(start,end){
   return path;
 }
 
-// ===== NEAREST NODE =====
+// ===== CREATE ARROWS =====
+const arrowContainer=document.getElementById("arrowContainer");
+
+let arrows=[];
+for(let i=0;i<15;i++){
+  const arrow=document.createElement("a-cone");
+  arrow.setAttribute("height","0.5");
+  arrow.setAttribute("radius-bottom","0.25");
+  arrow.setAttribute("rotation","90 0 0");
+  arrow.setAttribute("position",`0 0 ${-i*1}`);
+  arrow.setAttribute("color","#00ff66");
+  arrowContainer.appendChild(arrow);
+  arrows.push(arrow);
+}
+
+// ===== COMPASS =====
+let heading=0;
+let smoothHeading=0;
+
+window.addEventListener("deviceorientation",e=>{
+  heading=e.alpha||0;
+  smoothHeading=smoothHeading*0.9+heading*0.1;
+});
+
+// ===== GPS =====
+let route=[];
+let currentIndex=0;
+
 function nearestNode(lat,lon){
   let min=Infinity,closest=null;
   Object.keys(nodes).forEach(n=>{
@@ -160,31 +178,16 @@ function nearestNode(lat,lon){
   return closest;
 }
 
-// ===== ROUTE INIT =====
-let route=[];
-let currentIndex=0;
-
-function initRoute(lat,lon){
-  const start=nearestNode(lat,lon);
-  route=shortestPath(start,destinationKey);
-  document.getElementById("distance").innerText=
-    "Route: "+route.join(" → ");
-}
-
-// First get position once
 navigator.geolocation.getCurrentPosition(pos=>{
-  initRoute(pos.coords.latitude,pos.coords.longitude);
 
-  // Then start watching
+  const start=nearestNode(pos.coords.latitude,pos.coords.longitude);
+  route=shortestPath(start,destinationKey);
+
   navigator.geolocation.watchPosition(updatePosition,
   {enableHighAccuracy:true});
 
-},()=>{
-  document.getElementById("distance").innerText=
-    "GPS permission needed.";
 });
 
-// ===== UPDATE POSITION =====
 function updatePosition(pos){
 
   const userLat=pos.coords.latitude;
@@ -201,9 +204,30 @@ function updatePosition(pos){
     currentIndex++;
   }
 
-  document.getElementById("distance").innerText=
+  document.getElementById("distance").innerText =
     "Route: "+route.join(" → ");
+
+  const bearing=Math.atan2(
+    target.lon-userLon,
+    target.lat-userLat
+  )*180/Math.PI;
+
+  const rotation=bearing-smoothHeading;
+
+  arrowContainer.setAttribute("rotation",`0 ${rotation} 0`);
 }
+
+// ===== ARROW FLOW ANIMATION =====
+function animate(){
+  arrows.forEach(a=>{
+    let pos=a.getAttribute("position");
+    pos.z+=0.05;
+    if(pos.z>1) pos.z=-15;
+    a.setAttribute("position",pos);
+  });
+  requestAnimationFrame(animate);
+}
+animate();
 
 </script>
 </body>
