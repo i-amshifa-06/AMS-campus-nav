@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMS Graph Routing AR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AMS Campus Smart AR</title>
 
 <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
@@ -20,6 +20,7 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   background:rgba(0,0,0,0.6);
   padding:12px;
   z-index:10;
+  backdrop-filter: blur(6px);
 }
 </style>
 </head>
@@ -46,6 +47,10 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 
 <a-light type="ambient" intensity="2"></a-light>
 
+<a-entity id="path" position="0 -1 -6"></a-entity>
+
+</a-scene>
+
 <script>
 
 // ================= DESTINATION =================
@@ -53,38 +58,37 @@ const destination = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = destination.name;
 
 // ================= CAMPUS GRAPH =================
-
 const nodes = {
-  gate: { lat:13.147000, lon:80.058500 },
-  cse: { lat:13.147709, lon:80.058464 },
-  basic: { lat:13.147422, lon:80.058960 },
-  ece: { lat:13.146888, lon:80.058802 },
-  eee: { lat:13.147037, lon:80.059698 },
-  canteen: { lat:13.146777, lon:80.059334 },
-  girls: { lat:13.146819, lon:80.060008 },
-  masjid: { lat:13.146475, lon:80.060354 },
-  boys: { lat:13.147469, lon:80.057550 },
-  arch: { lat:13.147296, lon:80.056759 },
-  mech: { lat:13.147151, lon:80.056290 }
+  gate:{lat:13.147000,lon:80.058500},
+  cse:{lat:13.147709,lon:80.058464},
+  basic:{lat:13.147422,lon:80.058960},
+  ece:{lat:13.146888,lon:80.058802},
+  eee:{lat:13.147037,lon:80.059698},
+  canteen:{lat:13.146777,lon:80.059334},
+  girls:{lat:13.146819,lon:80.060008},
+  masjid:{lat:13.146475,lon:80.060354},
+  boys:{lat:13.147469,lon:80.057550},
+  arch:{lat:13.147296,lon:80.056759},
+  mech:{lat:13.147151,lon:80.056290}
 };
 
 const edges = {
-  gate: ["ece","cse"],
-  cse: ["gate","basic","boys","arch","mech"],
-  basic: ["cse","eee"],
-  ece: ["gate","canteen","eee"],
-  eee: ["basic","ece","girls"],
-  canteen: ["ece","girls"],
-  girls: ["canteen","eee","masjid"],
-  masjid: ["girls"],
-  boys: ["cse"],
-  arch: ["cse"],
-  mech: ["cse"]
+  gate:["ece","cse"],
+  cse:["gate","basic","boys","arch","mech"],
+  basic:["cse","eee"],
+  ece:["gate","canteen","eee"],
+  eee:["basic","ece","girls"],
+  canteen:["ece","girls"],
+  girls:["canteen","eee","masjid"],
+  masjid:["girls"],
+  boys:["cse"],
+  arch:["cse"],
+  mech:["cse"]
 };
 
 // ================= MATH =================
-function toRad(d){ return d*Math.PI/180; }
-function distance(a,b){
+function toRad(d){return d*Math.PI/180;}
+function haversine(a,b){
   const R=6371e3;
   const φ1=toRad(nodes[a].lat);
   const φ2=toRad(nodes[b].lat);
@@ -97,26 +101,18 @@ function distance(a,b){
 
 // ================= DIJKSTRA =================
 function shortestPath(start,end){
-
-  const dist={};
-  const prev={};
-  const unvisited=new Set(Object.keys(nodes));
-
+  const dist={},prev={},unvisited=new Set(Object.keys(nodes));
   Object.keys(nodes).forEach(n=>dist[n]=Infinity);
   dist[start]=0;
 
   while(unvisited.size){
-
-    let current=[...unvisited]
-      .reduce((a,b)=>dist[a]<dist[b]?a:b);
-
+    let current=[...unvisited].reduce((a,b)=>dist[a]<dist[b]?a:b);
     if(current===end) break;
-
     unvisited.delete(current);
 
     edges[current].forEach(neighbor=>{
       if(unvisited.has(neighbor)){
-        const alt=dist[current]+distance(current,neighbor);
+        const alt=dist[current]+haversine(current,neighbor);
         if(alt<dist[neighbor]){
           dist[neighbor]=alt;
           prev[neighbor]=current;
@@ -127,22 +123,15 @@ function shortestPath(start,end){
 
   const path=[];
   let u=end;
-  while(u){
-    path.unshift(u);
-    u=prev[u];
-  }
+  while(u){path.unshift(u);u=prev[u];}
   return path;
 }
 
-// ================= FIND START NODE =================
+// ================= NEAREST NODE =================
 function nearestNode(lat,lon){
-  let min=Infinity;
-  let closest=null;
+  let min=Infinity,closest=null;
   Object.keys(nodes).forEach(n=>{
-    const d=Math.hypot(
-      lat-nodes[n].lat,
-      lon-nodes[n].lon
-    );
+    const d=Math.hypot(lat-nodes[n].lat,lon-nodes[n].lon);
     if(d<min){min=d;closest=n;}
   });
   return closest;
@@ -152,12 +141,12 @@ function nearestNode(lat,lon){
 const pathContainer=document.getElementById("path");
 let arrowTiles=[];
 
-for(let i=0;i<15;i++){
+for(let i=0;i<20;i++){
   const tile=document.createElement("a-cone");
   tile.setAttribute("height","0.4");
   tile.setAttribute("radius-bottom","0.25");
   tile.setAttribute("rotation","90 0 0");
-  tile.setAttribute("position",`0 0 ${-i*0.8}`);
+  tile.setAttribute("position",`0 0 ${-i*1}`);
   tile.setAttribute("material",
     "color:#00ff66;emissive:#00ff66;emissiveIntensity:1;side:double;depthWrite:false;");
   pathContainer.appendChild(tile);
@@ -172,8 +161,7 @@ window.addEventListener("deviceorientation",e=>{
 });
 
 // ================= GPS =================
-let route=[];
-let currentTargetIndex=0;
+let route=[],currentIndex=0;
 
 navigator.geolocation.watchPosition(pos=>{
 
@@ -187,13 +175,13 @@ navigator.geolocation.watchPosition(pos=>{
     route=shortestPath(start,end);
   }
 
-  const targetNode=route[currentTargetIndex];
+  const targetNode=route[currentIndex];
   const target=nodes[targetNode];
 
   const d=Math.hypot(userLat-target.lat,userLon-target.lon);
 
-  if(d<0.0001 && currentTargetIndex<route.length-1){
-    currentTargetIndex++;
+  if(d<0.00008 && currentIndex<route.length-1){
+    currentIndex++;
   }
 
   document.getElementById("distance").innerText=
@@ -214,8 +202,8 @@ navigator.geolocation.watchPosition(pos=>{
 function animate(){
   arrowTiles.forEach(tile=>{
     let pos=tile.getAttribute("position");
-    pos.z+=0.03;
-    if(pos.z>1) pos.z=-10;
+    pos.z+=0.05;
+    if(pos.z>1) pos.z=-20;
     tile.setAttribute("position",pos);
   });
   requestAnimationFrame(animate);
