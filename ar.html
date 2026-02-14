@@ -2,12 +2,26 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>AMS AR Navigation</title>
+<title>AMS AR Path Navigation</title>
 
 <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
 
-<link rel="stylesheet" href="style.css">
+<style>
+body { margin:0; overflow:hidden; font-family:Arial; }
+
+.overlay {
+  position:absolute;
+  top:20px;
+  left:0;
+  right:0;
+  text-align:center;
+  color:white;
+  background:rgba(0,0,0,0.4);
+  padding:10px;
+  z-index:10;
+}
+</style>
 </head>
 
 <body>
@@ -28,32 +42,30 @@
 
   <a-light type="ambient" intensity="1"></a-light>
 
-  <!-- FORWARD ARROW -->
-  <a-entity id="arrow" position="0 -1 -6" rotation="90 0 0">
-
-    <!-- Shaft -->
-    <a-cylinder
-      position="0 0 -1"
-      radius="0.15"
-      height="2"
-      color="#ff0000">
-    </a-cylinder>
-
-    <!-- Head -->
-    <a-cone
-      position="0 0 -2.2"
-      radius-bottom="0.5"
-      height="1"
-      color="#ff0000">
-    </a-cone>
-
-  </a-entity>
+  <!-- PATH CONTAINER -->
+  <a-entity id="path" position="0 -1 -2"></a-entity>
 
 </a-scene>
 
 <script>
+
 const data = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = data.name;
+
+const pathContainer = document.getElementById("path");
+
+// Create arrow tiles
+for(let i=0; i<10; i++){
+  const tile = document.createElement("a-cone");
+
+  tile.setAttribute("height", "0.5");
+  tile.setAttribute("radius-bottom", "0.3");
+  tile.setAttribute("color", "#00ff66");
+  tile.setAttribute("rotation", "90 0 0");
+  tile.setAttribute("position", `0 0 ${-i*1.2}`);
+
+  pathContainer.appendChild(tile);
+}
 
 function toRad(d){ return d*Math.PI/180; }
 function toDeg(r){ return r*180/Math.PI; }
@@ -65,12 +77,11 @@ function calculateDistance(lat1, lon1, lat2, lon2){
   const Δφ = toRad(lat2-lat1);
   const Δλ = toRad(lon2-lon1);
 
-  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) +
+  const a = Math.sin(Δφ/2)**2 +
             Math.cos(φ1)*Math.cos(φ2) *
-            Math.sin(Δλ/2)*Math.sin(Δλ/2);
+            Math.sin(Δλ/2)**2;
 
-  const c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  return R*c;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
 function calculateBearing(lat1, lon1, lat2, lon2){
@@ -87,20 +98,9 @@ function calculateBearing(lat1, lon1, lat2, lon2){
 
 let heading = 0;
 
-if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-  DeviceOrientationEvent.requestPermission()
-    .then(permission => {
-      if(permission === 'granted'){
-        window.addEventListener('deviceorientation', e=>{
-          heading = e.alpha || 0;
-        });
-      }
-    });
-} else {
-  window.addEventListener('deviceorientation', e=>{
-    heading = e.alpha || 0;
-  });
-}
+window.addEventListener("deviceorientation", e=>{
+  heading = e.alpha || 0;
+});
 
 navigator.geolocation.watchPosition(position => {
 
@@ -121,8 +121,7 @@ navigator.geolocation.watchPosition(position => {
 
   const rotation = targetBearing - heading;
 
-  document.getElementById("arrow")
-    .setAttribute("rotation", `90 ${rotation} 0`);
+  pathContainer.setAttribute("rotation", `0 ${rotation} 0`);
 
 },
 error=>{
@@ -134,6 +133,7 @@ error=>{
   maximumAge:0,
   timeout:20000
 });
+
 </script>
 
 </body>
