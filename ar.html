@@ -17,31 +17,23 @@
   <p id="distance">Calculating...</p>
 </div>
 
-<a-scene 
+<a-scene
   vr-mode-ui="enabled: false"
   embedded
   renderer="logarithmicDepthBuffer: true;"
-  arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;"
+  arjs="sourceType: webcam; debugUIEnabled: false;"
 >
 
-  <a-camera gps-camera rotation-reader></a-camera>
+  <a-camera id="camera" gps-camera rotation-reader></a-camera>
 
-  <!-- BIG ARROW -->
+  <!-- ARROW ALWAYS IN FRONT -->
   <a-entity id="arrow"
-      geometry="primitive: cone; radiusBottom: 3; height: 8"
-      material="color: red"
-      rotation="0 0 180"
-      scale="10 10 10"
-      gps-entity-place="">
+    position="0 0 -10"
+    rotation="0 0 180"
+    geometry="primitive: cone; radiusBottom: 1; height: 3"
+    material="color: red"
+    scale="3 3 3">
   </a-entity>
-
-  <!-- LABEL -->
-  <a-text id="label"
-      gps-entity-place=""
-      scale="60 60 60"
-      align="center"
-      color="yellow">
-  </a-text>
 
 </a-scene>
 
@@ -49,18 +41,8 @@
 const data = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = data.name;
 
-const arrow = document.getElementById("arrow");
-const label = document.getElementById("label");
-
-arrow.setAttribute("gps-entity-place",
-  `latitude: ${data.lat}; longitude: ${data.lon};`);
-
-label.setAttribute("gps-entity-place",
-  `latitude: ${data.lat}; longitude: ${data.lon};`);
-
-label.setAttribute("value", data.name);
-
 function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
 
 function distance(lat1, lon1, lat2, lon2){
   const R = 6371e3;
@@ -73,9 +55,26 @@ function distance(lat1, lon1, lat2, lon2){
             Math.cos(φ1)*Math.cos(φ2)*
             Math.sin(Δλ/2)**2;
 
-  const c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  return R*c;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+
+function bearing(lat1, lon1, lat2, lon2){
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2-lon1);
+
+  const y = Math.sin(Δλ)*Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) -
+            Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+
+let deviceHeading = 0;
+
+window.addEventListener("deviceorientation", e => {
+  deviceHeading = e.alpha || 0;
+});
 
 navigator.geolocation.watchPosition(pos => {
 
@@ -91,14 +90,14 @@ navigator.geolocation.watchPosition(pos => {
     alert("You have arrived at " + data.name);
   }
 
-}, 
-error => {
-  alert("GPS Error: " + error.message);
-},
-{
-  enableHighAccuracy: true,
-  maximumAge: 0,
-  timeout: 27000
+  const targetBearing = bearing(userLat, userLon, data.lat, data.lon);
+  const rotation = targetBearing - deviceHeading;
+
+  const arrow = document.getElementById("arrow");
+  arrow.setAttribute("rotation", `0 ${rotation} 180`);
+
+}, {
+  enableHighAccuracy: true
 });
 </script>
 
