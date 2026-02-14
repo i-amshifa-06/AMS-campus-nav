@@ -5,7 +5,7 @@ body {
 }
 
 .home {
-  background: linear-gradient(135deg, #003366, #0055aa);
+  background: linear-gradient(135deg, #001f3f, #0074D9);
   color: white;
   height: 100vh;
   display: flex;
