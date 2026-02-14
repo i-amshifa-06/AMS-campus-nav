@@ -23,15 +23,8 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   backdrop-filter: blur(6px);
 }
 
-.overlay h3 {
-  margin:0;
-  font-size:18px;
-}
-
-.overlay p {
-  margin:4px 0 0;
-  font-size:14px;
-}
+.overlay h3 { margin:0; font-size:18px; }
+.overlay p { margin:4px 0 0; font-size:14px; }
 </style>
 </head>
 
@@ -51,7 +44,9 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 
   <a-camera id="camera" rotation-reader camera="fov:85"></a-camera>
 
-  <a-light type="ambient" intensity="1"></a-light>
+  <!-- Strong Lighting -->
+  <a-light type="ambient" intensity="2"></a-light>
+  <a-light type="directional" intensity="1" position="0 10 5"></a-light>
 
   <!-- PATH CONTAINER -->
   <a-entity id="path" position="0 -1 -2"></a-entity>
@@ -64,20 +59,27 @@ const data = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = data.name;
 
 const pathContainer = document.getElementById("path");
-
 let arrowTiles = [];
 
-// Create animated arrow tiles
+// Create premium arrow tiles
 for(let i=0; i<12; i++){
 
   const tile = document.createElement("a-cone");
 
   tile.setAttribute("height", "0.4");
   tile.setAttribute("radius-bottom", "0.25");
-  tile.setAttribute("color", "#00ff66");
   tile.setAttribute("rotation", "90 0 0");
   tile.setAttribute("position", `0 0 ${-i*0.8}`);
-  tile.setAttribute("material", "emissive:#00ff66; emissiveIntensity:0.7");
+
+  tile.setAttribute("material", `
+    color:#00ff66;
+    emissive:#00ff66;
+    emissiveIntensity:1;
+    side:double;
+    depthTest:false;
+    depthWrite:false;
+    transparent:true;
+  `);
 
   pathContainer.appendChild(tile);
   arrowTiles.push(tile);
@@ -144,6 +146,10 @@ navigator.geolocation.watchPosition(position => {
   pathContainer.setAttribute("rotation", `0 ${rotation} 0`);
 
 },
+error=>{
+  document.getElementById("distance").innerText =
+    "GPS Error: " + error.message;
+},
 {
   enableHighAccuracy:true,
   maximumAge:0,
@@ -156,7 +162,7 @@ function animateArrows(){
   arrowTiles.forEach(tile=>{
     let pos = tile.getAttribute("position");
 
-    pos.z += 0.02;
+    pos.z += 0.03;
 
     if(pos.z > 1){
       pos.z = -8;
