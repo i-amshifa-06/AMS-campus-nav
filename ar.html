@@ -53,11 +53,11 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 
 <script>
 
-// ================= DESTINATION =================
+// ===== DESTINATION =====
 const destination = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = destination.name;
 
-// ================= CAMPUS GRAPH =================
+// ===== NODE DATA =====
 const nodes = {
   gate:{lat:13.147000,lon:80.058500},
   cse:{lat:13.147709,lon:80.058464},
@@ -72,6 +72,33 @@ const nodes = {
   mech:{lat:13.147151,lon:80.056290}
 };
 
+// ===== DESTINATION KEY MATCHING (SAFE) =====
+function getDestinationKey(name){
+  name = name.toLowerCase();
+
+  if(name.includes("cse")) return "cse";
+  if(name.includes("it")) return "cse";
+  if(name.includes("basic")) return "basic";
+  if(name.includes("ece")) return "ece";
+  if(name.includes("eee")) return "eee";
+  if(name.includes("canteen")) return "canteen";
+  if(name.includes("girls")) return "girls";
+  if(name.includes("masjid")) return "masjid";
+  if(name.includes("boys")) return "boys";
+  if(name.includes("arch")) return "arch";
+  if(name.includes("mech")) return "mech";
+
+  return null;
+}
+
+const destinationKey = getDestinationKey(destination.name);
+
+if(!destinationKey){
+  document.getElementById("distance").innerText =
+    "Destination mapping failed.";
+}
+
+// ===== EDGES =====
 const edges = {
   gate:["ece","cse"],
   cse:["gate","basic","boys","arch","mech"],
@@ -86,7 +113,7 @@ const edges = {
   mech:["cse"]
 };
 
-// ================= MATH =================
+// ===== MATH =====
 function toRad(d){return d*Math.PI/180;}
 function haversine(a,b){
   const R=6371e3;
@@ -99,14 +126,16 @@ function haversine(a,b){
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ================= DIJKSTRA =================
+// ===== DIJKSTRA =====
 function shortestPath(start,end){
   const dist={},prev={},unvisited=new Set(Object.keys(nodes));
   Object.keys(nodes).forEach(n=>dist[n]=Infinity);
   dist[start]=0;
 
   while(unvisited.size){
-    let current=[...unvisited].reduce((a,b)=>dist[a]<dist[b]?a:b);
+    let current=[...unvisited]
+      .reduce((a,b)=>dist[a]<dist[b]?a:b);
+
     if(current===end) break;
     unvisited.delete(current);
 
@@ -127,7 +156,7 @@ function shortestPath(start,end){
   return path;
 }
 
-// ================= NEAREST NODE =================
+// ===== NEAREST NODE =====
 function nearestNode(lat,lon){
   let min=Infinity,closest=null;
   Object.keys(nodes).forEach(n=>{
@@ -137,30 +166,7 @@ function nearestNode(lat,lon){
   return closest;
 }
 
-// ================= AR PATH =================
-const pathContainer=document.getElementById("path");
-let arrowTiles=[];
-
-for(let i=0;i<20;i++){
-  const tile=document.createElement("a-cone");
-  tile.setAttribute("height","0.4");
-  tile.setAttribute("radius-bottom","0.25");
-  tile.setAttribute("rotation","90 0 0");
-  tile.setAttribute("position",`0 0 ${-i*1}`);
-  tile.setAttribute("material",
-    "color:#00ff66;emissive:#00ff66;emissiveIntensity:1;side:double;depthWrite:false;");
-  pathContainer.appendChild(tile);
-  arrowTiles.push(tile);
-}
-
-// ================= COMPASS =================
-let heading=0,smoothHeading=0;
-window.addEventListener("deviceorientation",e=>{
-  heading=e.alpha||0;
-  smoothHeading=smoothHeading*0.9+heading*0.1;
-});
-
-// ================= GPS =================
+// ===== GPS =====
 let route=[],currentIndex=0;
 
 navigator.geolocation.watchPosition(pos=>{
@@ -168,47 +174,29 @@ navigator.geolocation.watchPosition(pos=>{
   const userLat=pos.coords.latitude;
   const userLon=pos.coords.longitude;
 
-  if(route.length===0){
+  if(route.length===0 && destinationKey){
     const start=nearestNode(userLat,userLon);
-    const end=Object.keys(nodes)
-      .find(k=>destination.name.toLowerCase().includes(k));
-    route=shortestPath(start,end);
+    route=shortestPath(start,destinationKey);
   }
+
+  if(route.length===0) return;
 
   const targetNode=route[currentIndex];
   const target=nodes[targetNode];
 
-  const d=Math.hypot(userLat-target.lat,userLon-target.lon);
+  const distToTarget =
+    Math.hypot(userLat-target.lat,userLon-target.lon);
 
-  if(d<0.00008 && currentIndex<route.length-1){
+  if(distToTarget<0.00008 &&
+     currentIndex<route.length-1){
     currentIndex++;
   }
 
-  document.getElementById("distance").innerText=
+  document.getElementById("distance").innerText =
     "Route: "+route.join(" → ");
-
-  const bearing=Math.atan2(
-    target.lon-userLon,
-    target.lat-userLat
-  )*180/Math.PI;
-
-  const rotation=bearing-smoothHeading;
-  pathContainer.setAttribute("rotation",`0 ${rotation} 0`);
 
 },
 {enableHighAccuracy:true});
-
-// ================= ARROW ANIMATION =================
-function animate(){
-  arrowTiles.forEach(tile=>{
-    let pos=tile.getAttribute("position");
-    pos.z+=0.05;
-    if(pos.z>1) pos.z=-20;
-    tile.setAttribute("position",pos);
-  });
-  requestAnimationFrame(animate);
-}
-animate();
 
 </script>
 </body>
