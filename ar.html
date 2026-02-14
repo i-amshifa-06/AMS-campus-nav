@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>AMS Premium AR Navigation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMS Graph Routing AR</title>
 
 <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
@@ -17,14 +17,10 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   right:0;
   text-align:center;
   color:white;
-  background:rgba(0,0,0,0.5);
+  background:rgba(0,0,0,0.6);
   padding:12px;
   z-index:10;
-  backdrop-filter: blur(6px);
 }
-
-.overlay h3 { margin:0; font-size:18px; }
-.overlay p { margin:4px 0 0; font-size:14px; }
 </style>
 </head>
 
@@ -32,151 +28,196 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 
 <div class="overlay">
   <h3 id="placeName"></h3>
-  <p id="distance">Initializing GPS...</p>
+  <p id="distance">Calculating route...</p>
 </div>
 
-<a-scene
-  embedded
-  vr-mode-ui="enabled:false"
-  renderer="precision: mediump;"
-  arjs="sourceType: webcam; debugUIEnabled:false;"
->
+<a-scene embedded vr-mode-ui="enabled:false"
+renderer="precision:mediump;"
+arjs="sourceType:webcam;debugUIEnabled:false;">
 
-  <a-camera id="camera" rotation-reader camera="fov:85"></a-camera>
+<a-camera rotation-reader camera="fov:85"></a-camera>
+<a-light type="ambient" intensity="2"></a-light>
 
-  <!-- Strong Lighting -->
-  <a-light type="ambient" intensity="2"></a-light>
-  <a-light type="directional" intensity="1" position="0 10 5"></a-light>
-
-  <!-- PATH CONTAINER -->
-  <a-entity id="path" position="0 -1 -2"></a-entity>
+<a-entity id="path" position="0 -1 -2"></a-entity>
 
 </a-scene>
 
 <script>
 
-const data = JSON.parse(localStorage.getItem("destination"));
-document.getElementById("placeName").innerText = data.name;
+// ================= DESTINATION =================
+const destination = JSON.parse(localStorage.getItem("destination"));
+document.getElementById("placeName").innerText = destination.name;
 
-const pathContainer = document.getElementById("path");
-let arrowTiles = [];
+// ================= CAMPUS GRAPH =================
 
-// Create premium arrow tiles
-for(let i=0; i<12; i++){
+const nodes = {
+  gate: { lat:13.147000, lon:80.058500 },
+  cse: { lat:13.147709, lon:80.058464 },
+  basic: { lat:13.147422, lon:80.058960 },
+  ece: { lat:13.146888, lon:80.058802 },
+  eee: { lat:13.147037, lon:80.059698 },
+  canteen: { lat:13.146777, lon:80.059334 },
+  girls: { lat:13.146819, lon:80.060008 },
+  masjid: { lat:13.146475, lon:80.060354 },
+  boys: { lat:13.147469, lon:80.057550 },
+  arch: { lat:13.147296, lon:80.056759 },
+  mech: { lat:13.147151, lon:80.056290 }
+};
 
-  const tile = document.createElement("a-cone");
+const edges = {
+  gate: ["ece","cse"],
+  cse: ["gate","basic","boys","arch","mech"],
+  basic: ["cse","eee"],
+  ece: ["gate","canteen","eee"],
+  eee: ["basic","ece","girls"],
+  canteen: ["ece","girls"],
+  girls: ["canteen","eee","masjid"],
+  masjid: ["girls"],
+  boys: ["cse"],
+  arch: ["cse"],
+  mech: ["cse"]
+};
 
-  tile.setAttribute("height", "0.4");
-  tile.setAttribute("radius-bottom", "0.25");
-  tile.setAttribute("rotation", "90 0 0");
-  tile.setAttribute("position", `0 0 ${-i*0.8}`);
+// ================= MATH =================
+function toRad(d){ return d*Math.PI/180; }
+function distance(a,b){
+  const R=6371e3;
+  const φ1=toRad(nodes[a].lat);
+  const φ2=toRad(nodes[b].lat);
+  const Δφ=toRad(nodes[b].lat-nodes[a].lat);
+  const Δλ=toRad(nodes[b].lon-nodes[a].lon);
+  const x=Math.sin(Δφ/2)**2+
+          Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
 
-  tile.setAttribute("material", `
-    color:#00ff66;
-    emissive:#00ff66;
-    emissiveIntensity:1;
-    side:double;
-    depthTest:false;
-    depthWrite:false;
-    transparent:true;
-  `);
+// ================= DIJKSTRA =================
+function shortestPath(start,end){
 
+  const dist={};
+  const prev={};
+  const unvisited=new Set(Object.keys(nodes));
+
+  Object.keys(nodes).forEach(n=>dist[n]=Infinity);
+  dist[start]=0;
+
+  while(unvisited.size){
+
+    let current=[...unvisited]
+      .reduce((a,b)=>dist[a]<dist[b]?a:b);
+
+    if(current===end) break;
+
+    unvisited.delete(current);
+
+    edges[current].forEach(neighbor=>{
+      if(unvisited.has(neighbor)){
+        const alt=dist[current]+distance(current,neighbor);
+        if(alt<dist[neighbor]){
+          dist[neighbor]=alt;
+          prev[neighbor]=current;
+        }
+      }
+    });
+  }
+
+  const path=[];
+  let u=end;
+  while(u){
+    path.unshift(u);
+    u=prev[u];
+  }
+  return path;
+}
+
+// ================= FIND START NODE =================
+function nearestNode(lat,lon){
+  let min=Infinity;
+  let closest=null;
+  Object.keys(nodes).forEach(n=>{
+    const d=Math.hypot(
+      lat-nodes[n].lat,
+      lon-nodes[n].lon
+    );
+    if(d<min){min=d;closest=n;}
+  });
+  return closest;
+}
+
+// ================= AR PATH =================
+const pathContainer=document.getElementById("path");
+let arrowTiles=[];
+
+for(let i=0;i<15;i++){
+  const tile=document.createElement("a-cone");
+  tile.setAttribute("height","0.4");
+  tile.setAttribute("radius-bottom","0.25");
+  tile.setAttribute("rotation","90 0 0");
+  tile.setAttribute("position",`0 0 ${-i*0.8}`);
+  tile.setAttribute("material",
+    "color:#00ff66;emissive:#00ff66;emissiveIntensity:1;side:double;depthWrite:false;");
   pathContainer.appendChild(tile);
   arrowTiles.push(tile);
 }
 
-function toRad(d){ return d*Math.PI/180; }
-function toDeg(r){ return r*180/Math.PI; }
-
-function calculateDistance(lat1, lon1, lat2, lon2){
-  const R = 6371e3;
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δφ = toRad(lat2-lat1);
-  const Δλ = toRad(lon2-lon1);
-
-  const a = Math.sin(Δφ/2)**2 +
-            Math.cos(φ1)*Math.cos(φ2) *
-            Math.sin(Δλ/2)**2;
-
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-function calculateBearing(lat1, lon1, lat2, lon2){
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δλ = toRad(lon2-lon1);
-
-  const y = Math.sin(Δλ)*Math.cos(φ2);
-  const x = Math.cos(φ1)*Math.sin(φ2) -
-            Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-
-  return (toDeg(Math.atan2(y,x))+360)%360;
-}
-
-// Smooth compass filter
-let heading = 0;
-let smoothHeading = 0;
-
-window.addEventListener("deviceorientation", e=>{
-  heading = e.alpha || 0;
-  smoothHeading = smoothHeading * 0.9 + heading * 0.1;
+// ================= COMPASS =================
+let heading=0,smoothHeading=0;
+window.addEventListener("deviceorientation",e=>{
+  heading=e.alpha||0;
+  smoothHeading=smoothHeading*0.9+heading*0.1;
 });
 
-navigator.geolocation.watchPosition(position => {
+// ================= GPS =================
+let route=[];
+let currentTargetIndex=0;
 
-  const userLat = position.coords.latitude;
-  const userLon = position.coords.longitude;
+navigator.geolocation.watchPosition(pos=>{
 
-  const dist = calculateDistance(userLat,userLon,data.lat,data.lon);
+  const userLat=pos.coords.latitude;
+  const userLon=pos.coords.longitude;
 
-  document.getElementById("distance").innerText =
-    "Distance: " + dist.toFixed(1) + " m";
-
-  if(dist < 8){
-    if(navigator.vibrate) navigator.vibrate(500);
-    alert("You have arrived at " + data.name);
+  if(route.length===0){
+    const start=nearestNode(userLat,userLon);
+    const end=Object.keys(nodes)
+      .find(k=>destination.name.toLowerCase().includes(k));
+    route=shortestPath(start,end);
   }
 
-  const targetBearing =
-    calculateBearing(userLat,userLon,data.lat,data.lon);
+  const targetNode=route[currentTargetIndex];
+  const target=nodes[targetNode];
 
-  const rotation = targetBearing - smoothHeading;
+  const d=Math.hypot(userLat-target.lat,userLon-target.lon);
 
-  pathContainer.setAttribute("rotation", `0 ${rotation} 0`);
+  if(d<0.0001 && currentTargetIndex<route.length-1){
+    currentTargetIndex++;
+  }
+
+  document.getElementById("distance").innerText=
+    "Route: "+route.join(" → ");
+
+  const bearing=Math.atan2(
+    target.lon-userLon,
+    target.lat-userLat
+  )*180/Math.PI;
+
+  const rotation=bearing-smoothHeading;
+  pathContainer.setAttribute("rotation",`0 ${rotation} 0`);
 
 },
-error=>{
-  document.getElementById("distance").innerText =
-    "GPS Error: " + error.message;
-},
-{
-  enableHighAccuracy:true,
-  maximumAge:0,
-  timeout:20000
-});
+{enableHighAccuracy:true});
 
-// Animate arrows forward
-function animateArrows(){
-
+// ================= ARROW ANIMATION =================
+function animate(){
   arrowTiles.forEach(tile=>{
-    let pos = tile.getAttribute("position");
-
-    pos.z += 0.03;
-
-    if(pos.z > 1){
-      pos.z = -8;
-    }
-
-    tile.setAttribute("position", pos);
+    let pos=tile.getAttribute("position");
+    pos.z+=0.03;
+    if(pos.z>1) pos.z=-10;
+    tile.setAttribute("position",pos);
   });
-
-  requestAnimationFrame(animateArrows);
+  requestAnimationFrame(animate);
 }
-
-animateArrows();
+animate();
 
 </script>
-
 </body>
 </html>
