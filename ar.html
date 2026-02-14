@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMS Campus AR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AMS Campus AR Navigation</title>
 
 <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
@@ -11,7 +11,7 @@
 body{margin:0;overflow:hidden;font-family:Arial;}
 .overlay{
   position:absolute;
-  top:20px;
+  top:15px;
   left:0;
   right:0;
   text-align:center;
@@ -33,51 +33,76 @@ body{margin:0;overflow:hidden;font-family:Arial;}
 <a-scene
   embedded
   vr-mode-ui="enabled:false"
-  renderer="precision: mediump;"
+  renderer="precision:mediump;"
   arjs="sourceType:webcam; debugUIEnabled:false;"
 >
 
-<a-camera camera="fov:90"></a-camera>
+<!-- Correct FOV (not zoomed) -->
+<a-camera camera="fov:90; near:0.1; far:1000"></a-camera>
 
+<!-- Arrow container -->
 <a-entity id="arrowContainer" position="0 -1 -5"></a-entity>
 
 </a-scene>
 
 <script>
 
-// ===== DESTINATION =====
+// ================= DESTINATION =================
 const destination = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = destination.name;
 
-// ===== SIMPLE NODES =====
+// ================= CAMPUS NODES =================
 const nodes = {
   gate:{lat:13.147000,lon:80.058500},
+  cse:{lat:13.147709,lon:80.058464},
+  basic:{lat:13.147422,lon:80.058960},
   ece:{lat:13.146888,lon:80.058802},
+  eee:{lat:13.147037,lon:80.059698},
   canteen:{lat:13.146777,lon:80.059334},
-  eee:{lat:13.147037,lon:80.059698}
+  girls:{lat:13.146819,lon:80.060008},
+  masjid:{lat:13.146475,lon:80.060354},
+  boys:{lat:13.147469,lon:80.057550},
+  arch:{lat:13.147296,lon:80.056759},
+  mech:{lat:13.147151,lon:80.056290}
 };
 
-const edges={
-  gate:["ece"],
+// ================= ROAD CONNECTIONS =================
+const edges = {
+  gate:["ece","cse"],
+  cse:["gate","basic","boys","arch","mech"],
+  basic:["cse","eee"],
   ece:["gate","canteen","eee"],
-  canteen:["ece"],
-  eee:["ece"]
+  eee:["basic","ece","girls"],
+  canteen:["ece","girls"],
+  girls:["canteen","eee","masjid"],
+  masjid:["girls"],
+  boys:["cse"],
+  arch:["cse"],
+  mech:["cse"]
 };
 
-// ===== MATCH =====
+// ================= DESTINATION KEY MATCH =================
 function getKey(name){
   name=name.toLowerCase();
+  if(name.includes("cse")||name.includes("it")) return "cse";
+  if(name.includes("basic")) return "basic";
   if(name.includes("ece")) return "ece";
   if(name.includes("eee")) return "eee";
   if(name.includes("canteen")) return "canteen";
+  if(name.includes("girls")) return "girls";
+  if(name.includes("masjid")) return "masjid";
+  if(name.includes("boys")) return "boys";
+  if(name.includes("arch")) return "arch";
+  if(name.includes("mech")) return "mech";
   return "ece";
 }
 
-const destinationKey=getKey(destination.name);
+const destinationKey = getKey(destination.name);
 
-// ===== DISTANCE =====
-function toRad(d){return d*Math.PI/180;}
-function dist(a,b){
+// ================= DISTANCE CALC =================
+function toRad(d){ return d*Math.PI/180; }
+
+function haversine(a,b){
   const R=6371e3;
   const φ1=toRad(nodes[a].lat);
   const φ2=toRad(nodes[b].lat);
@@ -88,46 +113,102 @@ function dist(a,b){
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== ROUTE =====
-function shortest(start,end){
-  if(start===end) return [start];
-  return [start,end];
+// ================= DIJKSTRA SHORTEST PATH =================
+function shortestPath(start,end){
+  const dist={},prev={},unvisited=new Set(Object.keys(nodes));
+  Object.keys(nodes).forEach(n=>dist[n]=Infinity);
+  dist[start]=0;
+
+  while(unvisited.size){
+    let current=[...unvisited]
+      .reduce((a,b)=>dist[a]<dist[b]?a:b);
+
+    if(current===end) break;
+    unvisited.delete(current);
+
+    edges[current].forEach(neighbor=>{
+      if(unvisited.has(neighbor)){
+        const alt=dist[current]+haversine(current,neighbor);
+        if(alt<dist[neighbor]){
+          dist[neighbor]=alt;
+          prev[neighbor]=current;
+        }
+      }
+    });
+  }
+
+  const path=[];
+  let u=end;
+  while(u){ path.unshift(u); u=prev[u]; }
+  return path;
 }
 
-// ===== ARROWS (LIGHTWEIGHT) =====
-const container=document.getElementById("arrowContainer");
+// ================= NEAREST NODE =================
+function nearestNode(lat,lon){
+  let min=Infinity,closest=null;
+  Object.keys(nodes).forEach(n=>{
+    const d=Math.hypot(lat-nodes[n].lat,lon-nodes[n].lon);
+    if(d<min){min=d;closest=n;}
+  });
+  return closest;
+}
 
+// ================= CREATE LIGHTWEIGHT ARROWS =================
+const container=document.getElementById("arrowContainer");
 let arrows=[];
-for(let i=0;i<8;i++){
+
+for(let i=0;i<10;i++){
   const plane=document.createElement("a-plane");
   plane.setAttribute("width","0.4");
   plane.setAttribute("height","0.6");
   plane.setAttribute("rotation","-90 0 0");
-  plane.setAttribute("color","white");
+  plane.setAttribute("color","#00ff66");
   plane.setAttribute("position",`0 0 ${-i*1}`);
   container.appendChild(plane);
   arrows.push(plane);
 }
 
-// ===== COMPASS =====
+// ================= COMPASS =================
 let heading=0;
+let smoothHeading=0;
+
 window.addEventListener("deviceorientation",e=>{
   heading=e.alpha||0;
+  smoothHeading=smoothHeading*0.85+heading*0.15;
 });
 
-// ===== GPS =====
+// ================= GPS INIT =================
+let route=[];
+let currentIndex=0;
+
 navigator.geolocation.getCurrentPosition(pos=>{
+
+  const start=nearestNode(pos.coords.latitude,pos.coords.longitude);
+  route=shortestPath(start,destinationKey);
+
+  navigator.geolocation.watchPosition(updatePosition,
+  {enableHighAccuracy:true});
+
+});
+
+function updatePosition(pos){
+
+  if(route.length===0) return;
 
   const userLat=pos.coords.latitude;
   const userLon=pos.coords.longitude;
 
-  const start="ece"; // simplified for speed
-  const route=shortest(start,destinationKey);
+  const targetNode=route[currentIndex];
+  const target=nodes[targetNode];
 
-  document.getElementById("distance").innerText=
+  const d=Math.hypot(userLat-target.lat,userLon-target.lon);
+
+  if(d<0.00008 && currentIndex<route.length-1){
+    currentIndex++;
+  }
+
+  document.getElementById("distance").innerText =
     "Route: "+route.join(" → ");
-
-  const target=nodes[destinationKey];
 
   const bearing=Math.atan2(
     target.lon-userLon,
@@ -135,17 +216,15 @@ navigator.geolocation.getCurrentPosition(pos=>{
   )*180/Math.PI;
 
   container.setAttribute("rotation",
-    `0 ${bearing-heading} 0`);
+    `0 ${bearing-smoothHeading} 0`);
+}
 
-});
-
-
-// ===== LIGHT ANIMATION =====
+// ================= SMOOTH ARROW FLOW =================
 function animate(){
   arrows.forEach(a=>{
     let pos=a.getAttribute("position");
-    pos.z+=0.1;
-    if(pos.z>1) pos.z=-8;
+    pos.z+=0.08;
+    if(pos.z>1) pos.z=-10;
     a.setAttribute("position",pos);
   });
   requestAnimationFrame(animate);
