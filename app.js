@@ -14,10 +14,10 @@ const blocks = [
 const select = document.getElementById("blockSelect");
 
 blocks.forEach((block, i) => {
-  const opt = document.createElement("option");
-  opt.value = i;
-  opt.textContent = block.name;
-  select.appendChild(opt);
+  const option = document.createElement("option");
+  option.value = i;
+  option.textContent = block.name;
+  select.appendChild(option);
 });
 
 function startAR(){
