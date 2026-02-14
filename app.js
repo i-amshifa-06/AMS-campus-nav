@@ -13,10 +13,10 @@ const blocks = [
 
 const select = document.getElementById("blockSelect");
 
-blocks.forEach((b, i) => {
+blocks.forEach((block, i) => {
   const opt = document.createElement("option");
   opt.value = i;
-  opt.textContent = b.name;
+  opt.textContent = block.name;
   select.appendChild(opt);
 });
 
