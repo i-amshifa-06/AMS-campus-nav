@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMS Plane AR Navigation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AMS Premium AR Navigation</title>
+
+<script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+
 <style>
 body { margin:0; overflow:hidden; font-family:Arial; }
+
 .overlay {
   position:absolute;
   top:20px;
@@ -13,20 +18,19 @@ body { margin:0; overflow:hidden; font-family:Arial; }
   text-align:center;
   color:white;
   background:rgba(0,0,0,0.5);
-  padding:10px;
+  padding:12px;
   z-index:10;
+  backdrop-filter: blur(6px);
 }
-button {
-  position:absolute;
-  bottom:20px;
-  left:50%;
-  transform:translateX(-50%);
-  padding:12px 20px;
-  font-size:16px;
-  border:none;
-  background:#00cc66;
-  color:white;
-  border-radius:8px;
+
+.overlay h3 {
+  margin:0;
+  font-size:18px;
+}
+
+.overlay p {
+  margin:4px 0 0;
+  font-size:14px;
 }
 </style>
 </head>
@@ -35,109 +39,136 @@ button {
 
 <div class="overlay">
   <h3 id="placeName"></h3>
-  <p id="distance">Tap screen to place path</p>
+  <p id="distance">Initializing GPS...</p>
 </div>
 
-<button id="startAR">Start AR</button>
+<a-scene
+  embedded
+  vr-mode-ui="enabled:false"
+  renderer="precision: mediump;"
+  arjs="sourceType: webcam; debugUIEnabled:false;"
+>
 
-<script type="module">
+  <a-camera id="camera" rotation-reader camera="fov:85"></a-camera>
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { ARButton } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js";
+  <a-light type="ambient" intensity="1"></a-light>
+
+  <!-- PATH CONTAINER -->
+  <a-entity id="path" position="0 -1 -2"></a-entity>
+
+</a-scene>
+
+<script>
 
 const data = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = data.name;
 
-let camera, scene, renderer;
-let hitTestSource = null;
-let pathGroup = null;
+const pathContainer = document.getElementById("path");
+
+let arrowTiles = [];
+
+// Create animated arrow tiles
+for(let i=0; i<12; i++){
+
+  const tile = document.createElement("a-cone");
+
+  tile.setAttribute("height", "0.4");
+  tile.setAttribute("radius-bottom", "0.25");
+  tile.setAttribute("color", "#00ff66");
+  tile.setAttribute("rotation", "90 0 0");
+  tile.setAttribute("position", `0 0 ${-i*0.8}`);
+  tile.setAttribute("material", "emissive:#00ff66; emissiveIntensity:0.7");
+
+  pathContainer.appendChild(tile);
+  arrowTiles.push(tile);
+}
+
+function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
+
+function calculateDistance(lat1, lon1, lat2, lon2){
+  const R = 6371e3;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2-lat1);
+  const Δλ = toRad(lon2-lon1);
+
+  const a = Math.sin(Δφ/2)**2 +
+            Math.cos(φ1)*Math.cos(φ2) *
+            Math.sin(Δλ/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function calculateBearing(lat1, lon1, lat2, lon2){
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2-lon1);
+
+  const y = Math.sin(Δλ)*Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) -
+            Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+
+// Smooth compass filter
 let heading = 0;
+let smoothHeading = 0;
 
-init();
+window.addEventListener("deviceorientation", e=>{
+  heading = e.alpha || 0;
+  smoothHeading = smoothHeading * 0.9 + heading * 0.1;
+});
 
-function init(){
+navigator.geolocation.watchPosition(position => {
 
-  scene = new THREE.Scene();
+  const userLat = position.coords.latitude;
+  const userLon = position.coords.longitude;
 
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
+  const dist = calculateDistance(userLat,userLon,data.lat,data.lon);
 
-  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
+  document.getElementById("distance").innerText =
+    "Distance: " + dist.toFixed(1) + " m";
 
-  document.body.appendChild(renderer.domElement);
-
-  document.body.appendChild(ARButton.createButton(renderer, {
-    requiredFeatures: ['hit-test']
-  }));
-
-  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-  scene.add(light);
-
-  renderer.setAnimationLoop(render);
-}
-
-function render(timestamp, frame){
-
-  if(frame){
-
-    const referenceSpace = renderer.xr.getReferenceSpace();
-    const session = renderer.xr.getSession();
-
-    if(hitTestSource === null){
-
-      session.requestReferenceSpace('viewer').then(space=>{
-        session.requestHitTestSource({ space:space }).then(source=>{
-          hitTestSource = source;
-        });
-      });
-    }
-
-    if(hitTestSource){
-
-      const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-      if(hitTestResults.length){
-
-        const hit = hitTestResults[0];
-        const pose = hit.getPose(referenceSpace);
-
-        if(!pathGroup){
-          createPath();
-          pathGroup.position.set(
-            pose.transform.position.x,
-            pose.transform.position.y,
-            pose.transform.position.z
-          );
-        }
-
-      }
-    }
-
+  if(dist < 8){
+    if(navigator.vibrate) navigator.vibrate(500);
+    alert("You have arrived at " + data.name);
   }
 
-  renderer.render(scene, camera);
+  const targetBearing =
+    calculateBearing(userLat,userLon,data.lat,data.lon);
+
+  const rotation = targetBearing - smoothHeading;
+
+  pathContainer.setAttribute("rotation", `0 ${rotation} 0`);
+
+},
+{
+  enableHighAccuracy:true,
+  maximumAge:0,
+  timeout:20000
+});
+
+// Animate arrows forward
+function animateArrows(){
+
+  arrowTiles.forEach(tile=>{
+    let pos = tile.getAttribute("position");
+
+    pos.z += 0.02;
+
+    if(pos.z > 1){
+      pos.z = -8;
+    }
+
+    tile.setAttribute("position", pos);
+  });
+
+  requestAnimationFrame(animateArrows);
 }
 
-function createPath(){
-
-  pathGroup = new THREE.Group();
-
-  const material = new THREE.MeshStandardMaterial({ color:0x00ff66 });
-
-  for(let i=0; i<10; i++){
-
-    const geometry = new THREE.ConeGeometry(0.1, 0.3, 16);
-    const arrow = new THREE.Mesh(geometry, material);
-
-    arrow.rotation.x = Math.PI / 2;
-    arrow.position.z = -i * 0.5;
-
-    pathGroup.add(arrow);
-  }
-
-  scene.add(pathGroup);
-}
+animateArrows();
 
 </script>
 
