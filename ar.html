@@ -57,7 +57,7 @@ body { margin:0; overflow:hidden; font-family:Arial; }
 const destination = JSON.parse(localStorage.getItem("destination"));
 document.getElementById("placeName").innerText = destination.name;
 
-// ===== NODE DATA =====
+// ===== NODES =====
 const nodes = {
   gate:{lat:13.147000,lon:80.058500},
   cse:{lat:13.147709,lon:80.058464},
@@ -72,33 +72,6 @@ const nodes = {
   mech:{lat:13.147151,lon:80.056290}
 };
 
-// ===== DESTINATION KEY MATCHING (SAFE) =====
-function getDestinationKey(name){
-  name = name.toLowerCase();
-
-  if(name.includes("cse")) return "cse";
-  if(name.includes("it")) return "cse";
-  if(name.includes("basic")) return "basic";
-  if(name.includes("ece")) return "ece";
-  if(name.includes("eee")) return "eee";
-  if(name.includes("canteen")) return "canteen";
-  if(name.includes("girls")) return "girls";
-  if(name.includes("masjid")) return "masjid";
-  if(name.includes("boys")) return "boys";
-  if(name.includes("arch")) return "arch";
-  if(name.includes("mech")) return "mech";
-
-  return null;
-}
-
-const destinationKey = getDestinationKey(destination.name);
-
-if(!destinationKey){
-  document.getElementById("distance").innerText =
-    "Destination mapping failed.";
-}
-
-// ===== EDGES =====
 const edges = {
   gate:["ece","cse"],
   cse:["gate","basic","boys","arch","mech"],
@@ -113,7 +86,29 @@ const edges = {
   mech:["cse"]
 };
 
-// ===== MATH =====
+// ===== DESTINATION MATCH =====
+function getKey(name){
+  name=name.toLowerCase();
+  if(name.includes("cse")||name.includes("it")) return "cse";
+  if(name.includes("basic")) return "basic";
+  if(name.includes("ece")) return "ece";
+  if(name.includes("eee")) return "eee";
+  if(name.includes("canteen")) return "canteen";
+  if(name.includes("girls")) return "girls";
+  if(name.includes("masjid")) return "masjid";
+  if(name.includes("boys")) return "boys";
+  if(name.includes("arch")) return "arch";
+  if(name.includes("mech")) return "mech";
+  return null;
+}
+
+const destinationKey=getKey(destination.name);
+
+if(!destinationKey){
+  document.getElementById("distance").innerText="Destination error.";
+}
+
+// ===== DISTANCE =====
 function toRad(d){return d*Math.PI/180;}
 function haversine(a,b){
   const R=6371e3;
@@ -135,7 +130,6 @@ function shortestPath(start,end){
   while(unvisited.size){
     let current=[...unvisited]
       .reduce((a,b)=>dist[a]<dist[b]?a:b);
-
     if(current===end) break;
     unvisited.delete(current);
 
@@ -166,37 +160,50 @@ function nearestNode(lat,lon){
   return closest;
 }
 
-// ===== GPS =====
-let route=[],currentIndex=0;
+// ===== ROUTE INIT =====
+let route=[];
+let currentIndex=0;
 
-navigator.geolocation.watchPosition(pos=>{
+function initRoute(lat,lon){
+  const start=nearestNode(lat,lon);
+  route=shortestPath(start,destinationKey);
+  document.getElementById("distance").innerText=
+    "Route: "+route.join(" → ");
+}
+
+// First get position once
+navigator.geolocation.getCurrentPosition(pos=>{
+  initRoute(pos.coords.latitude,pos.coords.longitude);
+
+  // Then start watching
+  navigator.geolocation.watchPosition(updatePosition,
+  {enableHighAccuracy:true});
+
+},()=>{
+  document.getElementById("distance").innerText=
+    "GPS permission needed.";
+});
+
+// ===== UPDATE POSITION =====
+function updatePosition(pos){
 
   const userLat=pos.coords.latitude;
   const userLon=pos.coords.longitude;
-
-  if(route.length===0 && destinationKey){
-    const start=nearestNode(userLat,userLon);
-    route=shortestPath(start,destinationKey);
-  }
 
   if(route.length===0) return;
 
   const targetNode=route[currentIndex];
   const target=nodes[targetNode];
 
-  const distToTarget =
-    Math.hypot(userLat-target.lat,userLon-target.lon);
+  const d=Math.hypot(userLat-target.lat,userLon-target.lon);
 
-  if(distToTarget<0.00008 &&
-     currentIndex<route.length-1){
+  if(d<0.00008 && currentIndex<route.length-1){
     currentIndex++;
   }
 
-  document.getElementById("distance").innerText =
+  document.getElementById("distance").innerText=
     "Route: "+route.join(" → ");
-
-},
-{enableHighAccuracy:true});
+}
 
 </script>
 </body>
